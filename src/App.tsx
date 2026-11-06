@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { TravelMemory, User, NotificationItem } from './types/travel';
 import {
-  getStoredUser,
   saveStoredUser,
   getStoredNotifications,
   saveStoredNotifications,
@@ -26,11 +25,9 @@ import { AuthModal } from './components/AuthModal';
 import { ProfileModal } from './components/ProfileModal';
 import { NotificationDropdown } from './components/NotificationDropdown';
 import { OfflineBanner } from './components/OfflineBanner';
-
+import { api, getToken, setToken, toUser } from './utils/api';
 import { Sparkles, Compass, AlertCircle, CheckCircle, Users } from 'lucide-react';
 
-// Backend API Base URL
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export default function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
@@ -41,6 +38,7 @@ export default function App() {
   const [isOffline, setIsOffline] = useState(false);
   const [offlineQueue, setOfflineQueue] = useState(getOfflineQueue());
   const [isSyncing, setIsSyncing] = useState(false);
+  const [authLoading, setAuthLoading] = useState(!!getToken());
 
   // Active view & filters
   const [activeView, setActiveView] = useState<'feed' | 'itineraries' | 'saved'>('feed');
@@ -70,13 +68,14 @@ export default function App() {
     country: doc.country || 'Global',
     travelStyle: doc.travelStyle || 'Slow Travel',
     tags: doc.tags || [],
-    author: doc.author || {
-      id: doc.uploadedBy || 'anon',
+    author: {
+      id: doc.uploaderId || 'anon',
       name: doc.uploadedBy || 'Anonymous',
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
     },
     createdAt: doc.createdAt ? new Date(doc.createdAt).toLocaleDateString() : 'Just now',
-    likes: Array.isArray(doc.likes) ? doc.likes : Array(doc.likes || 0).fill('like_user'),
+    likes: doc.likedBy || [],
+    sharedWith: doc.sharedWith || [],
     comments: (doc.comments || []).map((c: any) => ({
       id: c._id || c.id || `c_${Date.now()}`,
       author: c.author || { name: c.username || 'Explorer', avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80' },
@@ -87,33 +86,29 @@ export default function App() {
   });
 
   // Fetch initial data from Express API
+  const loadPhotos = () =>
+  api<any[]>('/photos')
+    .then((data) => setMemories(data.map(mapMongoMemory)))
+    .catch((err) => console.error('Failed to load photos:', err));
+
   useEffect(() => {
     const savedTheme = getStoredTheme();
     setTheme(savedTheme);
-    if (savedTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    document.documentElement.classList.toggle('dark', savedTheme === 'dark');
 
-    setCurrentUser(getStoredUser());
     setBookmarks(getStoredBookmarks());
     setNotifications(getStoredNotifications());
     setOfflineQueue(getOfflineQueue());
 
-    // Load memories from Express/MongoDB backend
-    fetch(`${API_BASE_URL}/photos`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) {
-          setMemories(data.map(mapMongoMemory));
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to load photos from Express backend:', err);
-      });
+    // Restore session from saved token
+    if (getToken()) {
+      api('/auth/me')
+        .then((u) => { setCurrentUser(toUser(u)); return loadPhotos(); })
+        .catch(() => setToken(null))
+        .finally(() => setAuthLoading(false));
+    }
 
-    // Listen to browser network changes
+    const handleExpired = () => { setCurrentUser(null); setMemories([]); };
     const handleOnline = () => {
       setIsOffline(false);
       showToast('Online connection restored', 'You can now synchronize any offline-saved drafts.', 'success');
@@ -123,10 +118,11 @@ export default function App() {
       showToast('Remote offline mode active', 'All cached memories and itineraries are accessible offline.', 'alert');
     };
 
+    window.addEventListener('auth-expired', handleExpired);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-
     return () => {
+      window.removeEventListener('auth-expired', handleExpired);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
@@ -164,16 +160,8 @@ export default function App() {
 
   // Handle Likes via API
   const handleLike = async (memoryId: string) => {
-    if (!currentUser) {
-      setIsAuthOpen(true);
-      return;
-    }
-
     try {
-      const res = await fetch(`${API_BASE_URL}/photos/${memoryId}/like`, {
-        method: 'POST',
-      });
-      const updatedDoc = await res.json();
+      const updatedDoc = await api(`/photos/${memoryId}/like`, { method: 'POST' });
       const formatted = mapMongoMemory(updatedDoc);
 
       setMemories((prev) => prev.map((m) => (m.id === memoryId ? formatted : m)));
@@ -181,7 +169,7 @@ export default function App() {
       if (selectedMemory && selectedMemory.id === memoryId) {
         setSelectedMemory(formatted);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error liking photo:', err);
     }
   };
@@ -200,10 +188,7 @@ export default function App() {
 
   // Handle Post Memory via API
   const handlePostMemory = async (memoryData: Partial<TravelMemory>) => {
-    if (!currentUser) {
-      setIsAuthOpen(true);
-      return;
-    }
+    if (!currentUser) return;
 
     const payload = {
       title: memoryData.title || 'Untitled Memory',
@@ -230,53 +215,27 @@ export default function App() {
     }
 
     try {
-      const res = await fetch(`${API_BASE_URL}/photos`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      const savedDoc = await res.json();
+      const savedDoc = await api('/photos', { method: 'POST', body: JSON.stringify(payload) });
       const newMemory = mapMongoMemory(savedDoc);
 
       setMemories((prev) => [newMemory, ...prev]);
       showToast('Memory Pinned to Scrapbook', 'Fellow explorers can now discover your journey.', 'success');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error posting memory:', err);
+      showToast('Upload failed', err.message, 'alert');
     }
 
     if (isMobileNewMemoryOpen) {
       setIsMobileNewMemoryOpen(false);
     }
   };
-
   // Handle Add Comment via API
   const handleAddComment = async (memoryId: string, text: string) => {
-    if (!currentUser) {
-      setIsAuthOpen(true);
-      return;
-    }
-
-    if (isOffline) {
-      addToOfflineQueue({
-        id: `queue_${Date.now()}`,
-        type: 'post_comment',
-        payload: { memoryId, username: currentUser.name, text },
-        timestamp: Date.now(),
-      });
-      setOfflineQueue(getOfflineQueue());
-      showToast('Comment Queued Offline', 'Will publish once network connection is re-established.', 'alert');
-      return;
-    }
-
     try {
-      const res = await fetch(`${API_BASE_URL}/photos/${memoryId}/comment`, {
+      const updatedDoc = await api(`/photos/${memoryId}/comment`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: currentUser.name, text }),
+        body: JSON.stringify({ text }),
       });
-
-      const updatedDoc = await res.json();
       const formatted = mapMongoMemory(updatedDoc);
 
       setMemories((prev) => prev.map((m) => (m.id === memoryId ? formatted : m)));
@@ -284,9 +243,26 @@ export default function App() {
       if (selectedMemory && selectedMemory.id === memoryId) {
         setSelectedMemory(formatted);
       }
-    } catch (err) {
-      console.error('Error posting comment:', err);
+    } catch (err: any) {
+      console.error('Error adding comment:', err);
     }
+  };
+
+  const handleLogin = (user: User) => {
+  setCurrentUser(user);
+  loadPhotos();
+  showToast(`Welcome, ${user.name}!`, 'You are signed in.', 'success');
+  };
+
+  const handleShare = async (memoryId: string, userIds: string[]) => {
+    const updated = await api(`/photos/${memoryId}/share`, {
+      method: 'POST',
+      body: JSON.stringify({ userIds }),
+    });
+    const formatted = mapMongoMemory(updated);
+    setMemories((prev) => prev.map((m) => (m.id === memoryId ? formatted : m)));
+    setSelectedMemory(formatted);
+    showToast('Photo shared', `Shared with ${userIds.length} friend(s).`, 'success');
   };
 
   // Sync Offline Queue
@@ -390,6 +366,21 @@ export default function App() {
   const userMemories = currentUser ? memories.filter((m) => m.author.name === currentUser.name) : [];
   const savedMemories = memories.filter((m) => bookmarks.includes(m.id));
 
+ if (authLoading) {
+  return (
+    <div className={`min-h-screen flex items-center justify-center text-sm ${theme === 'dark' ? 'bg-[#181B1E] text-stone-300' : 'bg-[#F9F7F2] text-stone-700'}`}>
+      Waking up the server… the first visit can take up to a minute.
+    </div>
+  );
+}
+
+if (!currentUser) {
+  return (
+    <div className={`min-h-screen ${theme === 'dark' ? 'bg-[#181B1E]' : 'bg-[#F9F7F2]'}`}>
+      <AuthModal isOpen theme={theme} onLogin={handleLogin} />
+    </div>
+  );
+}
   return (
     <div
       className={`min-h-screen font-sans selection:bg-[#FAB76D] selection:text-stone-900 transition-colors ${
@@ -556,17 +547,7 @@ export default function App() {
         onToggleBookmark={handleToggleBookmark}
         isOffline={isOffline}
         onRequireAuth={() => setIsAuthOpen(true)}
-      />
-
-      <AuthModal
-        isOpen={isAuthOpen}
-        onClose={() => setIsAuthOpen(false)}
-        theme={theme}
-        onLogin={(user) => {
-          setCurrentUser(user);
-          saveStoredUser(user);
-          showToast(`Welcome back, ${user.name}!`, 'Signed into your travel memory keeper.', 'success');
-        }}
+        onShare={handleShare}
       />
 
       <ProfileModal
@@ -578,15 +559,13 @@ export default function App() {
           saveStoredUser(updated);
           showToast('Profile Updated', 'Your explorer profile has been refreshed.', 'success');
         }}
-        onLogout={() => {
-          setCurrentUser(null);
-          showToast('Signed Out', 'You are now browsing as an anonymous guest.');
-        }}
+        onLogout={() => { setToken(null); setCurrentUser(null); setMemories([]); setIsProfileOpen(false); }}
         theme={theme}
         userMemories={userMemories}
         savedMemories={savedMemories}
         pendingSyncCount={offlineQueue.length}
         onSelectMemory={setSelectedMemory}
+        
       />
 
       <NotificationDropdown

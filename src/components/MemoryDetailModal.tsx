@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { TravelMemory, User, Comment } from '../types/travel';
 import { X, Heart, MessageSquare, MapPin, Calendar, Bookmark, Share2, Download, CloudOff, Check } from 'lucide-react';
 import { playHapticSound } from '../utils/storage';
+import { ShareModal } from './ShareModal';
 
 interface MemoryDetailModalProps {
   memory: TravelMemory | null;
@@ -14,6 +15,7 @@ interface MemoryDetailModalProps {
   onToggleBookmark: (memoryId: string) => void;
   isOffline: boolean;
   onRequireAuth: () => void;
+  onShare: (memoryId: string, userIds: string[]) => Promise<void>;
 }
 
 export const MemoryDetailModal: React.FC<MemoryDetailModalProps> = ({
@@ -27,9 +29,10 @@ export const MemoryDetailModal: React.FC<MemoryDetailModalProps> = ({
   onToggleBookmark,
   isOffline,
   onRequireAuth,
+  onShare,
 }) => {
   const [commentText, setCommentText] = useState('');
-  const [copiedLink, setCopiedLink] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [downloadedOffline, setDownloadedOffline] = useState(false);
 
   if (!memory) return null;
@@ -59,11 +62,6 @@ export const MemoryDetailModal: React.FC<MemoryDetailModalProps> = ({
     setCommentText('');
   };
 
-  const handleShare = () => {
-    navigator.clipboard?.writeText(window.location.href);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2000);
-  };
 
   const handleDownloadItinerary = () => {
     // Generate an offline text/markdown summary of the itinerary
@@ -243,13 +241,15 @@ ${day.activities.map(a => ` - ${a}`).join('\n')}
                     <span>{isBookmarked ? 'Saved' : 'Save'}</span>
                   </button>
 
-                  <button
-                    onClick={handleShare}
-                    className="flex items-center gap-1 text-xs text-stone-400 hover:text-stone-200 transition-colors"
-                  >
-                    {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
-                    <span>{copiedLink ? 'Copied' : 'Share'}</span>
-                  </button>
+                  {currentUser && memory.author.id === currentUser.id && (
+                    <button
+                      onClick={() => setShareOpen(true)}
+                      className="flex items-center gap-1 text-xs text-stone-400 hover:text-stone-200 transition-colors"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                      <span>Share</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -331,6 +331,14 @@ ${day.activities.map(a => ` - ${a}`).join('\n')}
           </div>
         </div>
       </div>
+
+      <ShareModal
+        isOpen={shareOpen}
+        onClose={() => setShareOpen(false)}
+        theme={theme}
+        alreadySharedWith={memory.sharedWith || []}
+        onShare={(ids) => onShare(memory.id, ids)}
+      />
     </div>
   );
 };

@@ -53,6 +53,7 @@ export interface TravelMemory {
   isOfflineCached?: boolean;
   isPendingSync?: boolean;
   savedBy?: string[];
+  sharedWith?: string[];
 }
 
 export interface NotificationItem {
