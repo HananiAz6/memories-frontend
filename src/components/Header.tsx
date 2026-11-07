@@ -115,27 +115,6 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </button>
 
-          {/* Notification Bell */}
-          <button
-            onClick={() => {
-              playHapticSound('notification');
-              onOpenNotifications();
-            }}
-            className={`relative p-2 rounded-lg transition-colors ${
-              theme === 'dark' 
-                ? 'bg-stone-800 text-stone-300 hover:text-stone-100 hover:bg-stone-700' 
-                : 'bg-stone-100 text-stone-600 hover:text-stone-900 hover:bg-stone-200'
-            }`}
-            aria-label="View notifications"
-          >
-            <Bell className="w-4 h-4" />
-            {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#EF853F] text-white text-[10px] font-bold flex items-center justify-center shadow">
-                {unreadCount}
-              </span>
-            )}
-          </button>
-
           {/* User Account / Profile Badge */}
           {currentUser ? (
             <div className="flex items-center gap-2">
