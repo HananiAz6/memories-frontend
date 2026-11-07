@@ -67,17 +67,6 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           <button
-            onClick={() => onSelectView('itineraries')}
-            className={`transition-colors hover:text-[#EF853F] ${
-              activeView === 'itineraries'
-                ? 'text-[#EF853F] font-semibold border-b-2 border-[#EF853F] pb-1'
-                : theme === 'dark' ? 'text-stone-300' : 'text-stone-600'
-            }`}
-          >
-            Trip Itineraries
-          </button>
-
-          <button
             onClick={() => onSelectView('saved')}
             className={`flex items-center gap-1.5 transition-colors hover:text-[#EF853F] ${
               activeView === 'saved'
