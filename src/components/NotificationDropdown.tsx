@@ -10,7 +10,6 @@ interface NotificationDropdownProps {
   onMarkAllRead: () => void;
   onSelectNotification: (memoryId: string) => void;
   theme: 'dark' | 'light';
-  onSimulateActivity: () => void;
 }
 
 export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
@@ -20,7 +19,6 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
   onMarkAllRead,
   onSelectNotification,
   theme,
-  onSimulateActivity,
 }) => {
   if (!isOpen) return null;
 
@@ -130,7 +128,6 @@ export const NotificationDropdown: React.FC<NotificationDropdownProps> = ({
           <button
             onClick={() => {
               playHapticSound('notification');
-              onSimulateActivity();
             }}
             className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-[#FAB76D] hover:bg-[#EF853F] hover:text-white text-stone-950 transition-colors"
           >

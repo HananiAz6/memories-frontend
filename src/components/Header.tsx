@@ -1,13 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { User, NotificationItem } from '../types/travel';
-import { Sun, Moon, Bell, Wifi, WifiOff, Compass, Bookmark, PlusCircle } from 'lucide-react';
+import { Sun, Moon, Bell, Compass, Bookmark, PlusCircle } from 'lucide-react';
 import { playHapticSound } from '../utils/storage';
 
 interface HeaderProps {
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
-  isOffline: boolean;
-  onToggleOffline: () => void;
   currentUser: User | null;
   onOpenAuth: () => void;
   onOpenProfile: () => void;
@@ -16,14 +14,11 @@ interface HeaderProps {
   activeView: 'feed' | 'itineraries' | 'saved';
   notifications: NotificationItem[];
   onOpenNotifications: () => void;
-  pendingSyncCount: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   theme,
   onToggleTheme,
-  isOffline,
-  onToggleOffline,
   currentUser,
   onOpenAuth,
   onOpenProfile,
@@ -32,7 +27,6 @@ export const Header: React.FC<HeaderProps> = ({
   activeView,
   notifications,
   onOpenNotifications,
-  pendingSyncCount,
 }) => {
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -57,22 +51,9 @@ export const Header: React.FC<HeaderProps> = ({
               Memories
             </span>
           </button>
-
-          {isOffline && (
-            <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium rounded-full bg-[#EF853F]/15 text-[#EF853F] border border-[#EF853F]/30">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#EF853F] animate-pulse"></span>
-              Remote Offline
-            </span>
-          )}
-
-          {pendingSyncCount > 0 && !isOffline && (
-            <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-medium rounded-full bg-[#2C8287]/15 text-[#2C8287] border border-[#2C8287]/30">
-              {pendingSyncCount} to sync
-            </span>
-          )}
         </div>
 
-        {/* Zone 2: Navigation Links (Text with hover states) */}
+        {/* Zone 2: Navigation Links */}
         <nav className="hidden md:flex items-center gap-8 text-sm font-medium">
           <button
             onClick={() => onSelectView('feed')}
@@ -124,27 +105,6 @@ export const Header: React.FC<HeaderProps> = ({
             <span>Post</span>
           </button>
 
-          {/* Offline / Online Remote Mode Simulator */}
-          <button
-            onClick={() => {
-              playHapticSound('toggle');
-              onToggleOffline();
-            }}
-            title={isOffline ? "You are in remote offline mode (Click to go online)" : "Simulate remote location (Click to test offline access)"}
-            className={`p-2 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${
-              isOffline
-                ? 'bg-[#EF853F]/20 text-[#EF853F] border border-[#EF853F]/40'
-                : theme === 'dark'
-                ? 'bg-stone-800 text-stone-300 hover:text-stone-100 hover:bg-stone-700'
-                : 'bg-stone-100 text-stone-600 hover:text-stone-900 hover:bg-stone-200'
-            }`}
-          >
-            {isOffline ? <WifiOff className="w-4 h-4" /> : <Wifi className="w-4 h-4 text-[#2C8287]" />}
-            <span className="hidden lg:inline text-[11px] font-sans">
-              {isOffline ? 'Offline Mode' : 'Online'}
-            </span>
-          </button>
-
           {/* Theme Toggle Button */}
           <button
             onClick={() => {
@@ -187,7 +147,7 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </button>
 
-          {/* User Account / Profile Badge (Matches Walter Motsi pill in IMG_5491) */}
+          {/* User Account / Profile Badge */}
           {currentUser ? (
             <div className="flex items-center gap-2">
               <button
@@ -223,7 +183,6 @@ export const Header: React.FC<HeaderProps> = ({
               Sign In
             </button>
           )}
-
         </div>
       </div>
     </header>

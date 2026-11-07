@@ -9,13 +9,15 @@ interface MemoryDetailModalProps {
   onClose: () => void;
   theme: 'dark' | 'light';
   currentUser: User | null;
-  onLike: (memoryId: string) => void;
-  onAddComment: (memoryId: string, text: string) => void;
+  onLike: (id: string) => void;
+  onAddComment: (id: string, text: string) => void;
   isBookmarked: boolean;
-  onToggleBookmark: (memoryId: string) => void;
-  isOffline: boolean;
+  onToggleBookmark: (id: string) => void;
   onRequireAuth: () => void;
-  onShare: (memoryId: string, userIds: string[]) => Promise<void>;
+  onShare: (id: string, userIds: string[]) => Promise<void>;
+  // Add these two new lines:
+  onDelete?: (id: string) => void;
+  onEdit?: (id: string, updates: Partial<TravelMemory>) => void;
 }
 
 export const MemoryDetailModal: React.FC<MemoryDetailModalProps> = ({
@@ -27,9 +29,11 @@ export const MemoryDetailModal: React.FC<MemoryDetailModalProps> = ({
   onAddComment,
   isBookmarked,
   onToggleBookmark,
-  isOffline,
   onRequireAuth,
   onShare,
+  onDelete, // <-- ADD THIS
+  onEdit,   // <-- ADD THIS
+  
 }) => {
   const [commentText, setCommentText] = useState('');
   const [shareOpen, setShareOpen] = useState(false);
@@ -208,6 +212,38 @@ ${day.activities.map(a => ` - ${a}`).join('\n')}
                 ))}
               </div>
 
+              {/* Edit and Delete Actions (Only visible to the author) */}
+              {currentUser && memory?.author.name === currentUser.name && (
+                <div className="flex items-center gap-2 mt-4">
+                  {onEdit && (
+                    <button 
+                      onClick={() => {
+                        const newTitle = window.prompt('Edit Title:', memory.title);
+                        if (newTitle && newTitle !== memory.title) {
+                          onEdit(memory.id, { title: newTitle });
+                        }
+                      }}
+                      className="px-3 py-1 text-xs font-semibold rounded-lg bg-stone-200 text-stone-800 hover:bg-stone-300 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700 transition-colors"
+                    >
+                      Edit Title
+                    </button>
+                  )}
+                  
+                  {onDelete && (
+                    <button 
+                      onClick={() => {
+                        if (window.confirm('Are you sure you want to delete this memory? This cannot be undone.')) {
+                          onDelete(memory.id);
+                        }
+                      }}
+                      className="px-3 py-1 text-xs font-semibold rounded-lg bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 transition-colors"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Story Description */}
               <div className="mt-4 pt-4 border-t border-stone-200/60 dark:border-stone-800">
                 <p className={`text-sm leading-relaxed ${
@@ -257,12 +293,6 @@ ${day.activities.map(a => ` - ${a}`).join('\n')}
               <div className="mt-6">
                 <h4 className="text-xs font-mono uppercase tracking-wider text-stone-400 font-semibold mb-3 flex items-center justify-between">
                   <span>Comments ({memory.comments.length})</span>
-                  {isOffline && (
-                    <span className="text-[10px] text-[#EF853F] flex items-center gap-1 font-mono">
-                      <CloudOff className="w-3 h-3" />
-                      Offline Mode
-                    </span>
-                  )}
                 </h4>
 
                 {memory.comments.length === 0 ? (
@@ -315,9 +345,7 @@ ${day.activities.map(a => ` - ${a}`).join('\n')}
                   }`}
                 />
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-stone-400">
-                    {isOffline ? 'Comment will queue for sync' : 'Real-time alert sent to explorer'}
-                  </span>
+                  
                   <button
                     type="submit"
                     className="py-1.5 px-4 text-xs font-semibold rounded-lg bg-[#FAB76D] hover:bg-[#EF853F] hover:text-white text-stone-950 transition-colors shadow-xs"

@@ -6,7 +6,6 @@ interface HeroSectionProps {
   selectedStyle: string;
   onSelectStyle: (style: string) => void;
   totalMemoriesCount: number;
-  isOffline: boolean;
 }
 
 export const HeroSection: React.FC<HeroSectionProps> = ({
@@ -14,7 +13,6 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   selectedStyle,
   onSelectStyle,
   totalMemoriesCount,
-  isOffline,
 }) => {
   return (
     <div className="pt-8 pb-6 border-b transition-colors border-inherit">

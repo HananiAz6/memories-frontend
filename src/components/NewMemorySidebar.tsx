@@ -14,7 +14,6 @@ interface NewMemorySidebarProps {
   theme: 'dark' | 'light';
   currentUser: User | null;
   onPostMemory: (memory: Partial<TravelMemory>) => void;
-  isOffline: boolean;
   onRequireAuth: () => void;
 }
 
@@ -30,7 +29,6 @@ export const NewMemorySidebar: React.FC<NewMemorySidebarProps> = ({
   theme,
   currentUser,
   onPostMemory,
-  isOffline,
   onRequireAuth,
 }) => {
   const [title, setTitle] = useState('');
@@ -134,11 +132,6 @@ export const NewMemorySidebar: React.FC<NewMemorySidebarProps> = ({
           <Sparkles className="w-4 h-4 text-[#FAB76D] fill-[#FAB76D]" />
           New memory
         </h3>
-        {isOffline && (
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#EF853F]/15 text-[#EF853F] font-mono">
-            Offline draft
-          </span>
-        )}
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-3.5">
@@ -334,12 +327,6 @@ export const NewMemorySidebar: React.FC<NewMemorySidebarProps> = ({
         </div>
 
         {/* Offline Status Reminder */}
-        {isOffline && (
-          <div className="p-2.5 rounded-xl bg-[#EF853F]/10 border border-[#EF853F]/30 text-[11px] text-[#EF853F] flex items-center gap-2">
-            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-            <span>Posting in offline mode. Your memory will be cached and synced automatically when online.</span>
-          </div>
-        )}
 
         {/* Submit Button - Golden Amber button matching IMG_5491 */}
         <button

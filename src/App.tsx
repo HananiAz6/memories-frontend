@@ -13,7 +13,6 @@ import {
   saveStoredTheme,
   playHapticSound,
 } from './utils/storage';
-import { DEMO_EXPLORERS } from './data/initialData';
 
 import { Header } from './components/Header';
 import { HeroSection } from './components/HeroSection';
@@ -24,7 +23,6 @@ import { MemoryDetailModal } from './components/MemoryDetailModal';
 import { AuthModal } from './components/AuthModal';
 import { ProfileModal } from './components/ProfileModal';
 import { NotificationDropdown } from './components/NotificationDropdown';
-import { OfflineBanner } from './components/OfflineBanner';
 import { api, getToken, setToken, toUser } from './utils/api';
 import { Sparkles, Compass, AlertCircle, CheckCircle, Users } from 'lucide-react';
 
@@ -35,7 +33,6 @@ export default function App() {
   const [memories, setMemories] = useState<TravelMemory[]>([]);
   const [bookmarks, setBookmarks] = useState<string[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [isOffline, setIsOffline] = useState(false);
   const [offlineQueue, setOfflineQueue] = useState(getOfflineQueue());
   const [isSyncing, setIsSyncing] = useState(false);
   const [authLoading, setAuthLoading] = useState(!!getToken());
@@ -71,6 +68,7 @@ export default function App() {
     author: {
       id: doc.uploaderId || 'anon',
       name: doc.uploadedBy || 'Anonymous',
+      email: doc.uploaderEmail || '', // <-- Add this line
       avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
     },
     createdAt: doc.createdAt ? new Date(doc.createdAt).toLocaleDateString() : 'Just now',
@@ -92,41 +90,29 @@ export default function App() {
     .catch((err) => console.error('Failed to load photos:', err));
 
   useEffect(() => {
-    const savedTheme = getStoredTheme();
-    setTheme(savedTheme);
-    document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+      const savedTheme = getStoredTheme();
+      setTheme(savedTheme);
+      document.documentElement.classList.toggle('dark', savedTheme === 'dark');
 
-    setBookmarks(getStoredBookmarks());
-    setNotifications(getStoredNotifications());
-    setOfflineQueue(getOfflineQueue());
+      setBookmarks(getStoredBookmarks());
+      setNotifications(getStoredNotifications());
+      setOfflineQueue(getOfflineQueue());
 
-    // Restore session from saved token
-    if (getToken()) {
-      api('/auth/me')
-        .then((u) => { setCurrentUser(toUser(u)); return loadPhotos(); })
-        .catch(() => setToken(null))
-        .finally(() => setAuthLoading(false));
-    }
+      // Restore session from saved token
+      if (getToken()) {
+        api('/auth/me')
+          .then((u) => { setCurrentUser(toUser(u)); return loadPhotos(); })
+          .catch(() => setToken(null))
+          .finally(() => setAuthLoading(false));
+      }
 
-    const handleExpired = () => { setCurrentUser(null); setMemories([]); };
-    const handleOnline = () => {
-      setIsOffline(false);
-      showToast('Online connection restored', 'You can now synchronize any offline-saved drafts.', 'success');
-    };
-    const handleOffline = () => {
-      setIsOffline(true);
-      showToast('Remote offline mode active', 'All cached memories and itineraries are accessible offline.', 'alert');
-    };
+      const handleExpired = () => { setCurrentUser(null); setMemories([]); };
 
-    window.addEventListener('auth-expired', handleExpired);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('auth-expired', handleExpired);
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
+      window.addEventListener('auth-expired', handleExpired);
+      return () => {
+        window.removeEventListener('auth-expired', handleExpired);
+      };
+    }, []);
 
   const showToast = (title: string, desc: string, type: 'info' | 'success' | 'alert' = 'info') => {
     setToastMessage({ title, desc, type });
@@ -144,17 +130,6 @@ export default function App() {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
-    }
-  };
-
-  // Toggle Offline Simulator
-  const handleToggleOffline = () => {
-    const next = !isOffline;
-    setIsOffline(next);
-    if (next) {
-      showToast('Switched to Remote Mode', 'Simulating offline experience in remote mountains or deserts.', 'alert');
-    } else {
-      showToast('Reconnected to Network', 'Back online. Ready to sync with fellow explorers.', 'success');
     }
   };
 
@@ -201,19 +176,6 @@ export default function App() {
       travelStyle: memoryData.travelStyle || 'Slow Travel',
     };
 
-    if (isOffline) {
-      addToOfflineQueue({
-        id: `queue_${Date.now()}`,
-        type: 'post_memory',
-        payload,
-        timestamp: Date.now(),
-      });
-      setOfflineQueue(getOfflineQueue());
-      showToast('Saved in Offline Drafts', 'Memory saved to device. Will upload once connected.', 'alert');
-      if (isMobileNewMemoryOpen) setIsMobileNewMemoryOpen(false);
-      return;
-    }
-
     try {
       const savedDoc = await api('/photos', { method: 'POST', body: JSON.stringify(payload) });
       const newMemory = mapMongoMemory(savedDoc);
@@ -245,6 +207,36 @@ export default function App() {
       }
     } catch (err: any) {
       console.error('Error adding comment:', err);
+    }
+  };
+
+  // Handle Delete Memory via API
+  const handleDeleteMemory = async (memoryId: string) => {
+    try {
+      await api(`/photos/${memoryId}`, { method: 'DELETE' });
+      setMemories((prev) => prev.filter((m) => m.id !== memoryId));
+      if (selectedMemory?.id === memoryId) setSelectedMemory(null);
+      showToast('Memory Deleted', 'Your scrapbook has been updated.', 'success');
+    } catch (err: any) {
+      console.error('Error deleting memory:', err);
+      showToast('Delete failed', err.message, 'alert');
+    }
+  };
+
+  // Handle Edit Memory via API
+  const handleEditMemory = async (memoryId: string, updates: Partial<TravelMemory>) => {
+    try {
+      const updatedDoc = await api(`/photos/${memoryId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates),
+      });
+      const formatted = mapMongoMemory(updatedDoc);
+      setMemories((prev) => prev.map((m) => (m.id === memoryId ? formatted : m)));
+      if (selectedMemory?.id === memoryId) setSelectedMemory(formatted);
+      showToast('Memory Updated', 'Your changes have been saved.', 'success');
+    } catch (err: any) {
+      console.error('Error updating memory:', err);
+      showToast('Update failed', err.message, 'alert');
     }
   };
 
@@ -285,35 +277,6 @@ export default function App() {
     const updated = notifications.map((n) => ({ ...n, read: true }));
     setNotifications(updated);
     saveStoredNotifications(updated);
-  };
-
-  // Simulate real-time activity
-  const handleSimulateActivity = () => {
-    const randomExplorer = DEMO_EXPLORERS[Math.floor(Math.random() * (DEMO_EXPLORERS.length - 1)) + 1];
-    const targetMemory = memories[0];
-    if (!targetMemory) return;
-
-    playHapticSound('notification');
-
-    const newNotif: NotificationItem = {
-      id: `sim_${Date.now()}`,
-      type: 'like',
-      actor: {
-        name: randomExplorer.name,
-        avatar: randomExplorer.avatar,
-      },
-      memoryId: targetMemory.id,
-      memoryTitle: targetMemory.title,
-      message: `hearted your travel story "${targetMemory.title}"`,
-      createdAt: 'Just now',
-      read: false,
-    };
-
-    const next = [newNotif, ...notifications];
-    setNotifications(next);
-    saveStoredNotifications(next);
-
-    showToast(`New Interaction from ${randomExplorer.name}`, newNotif.message, 'info');
   };
 
   // Filter logic
@@ -390,8 +353,6 @@ if (!currentUser) {
       <Header
         theme={theme}
         onToggleTheme={handleToggleTheme}
-        isOffline={isOffline}
-        onToggleOffline={handleToggleOffline}
         currentUser={currentUser}
         onOpenAuth={() => setIsAuthOpen(true)}
         onOpenProfile={() => setIsProfileOpen(true)}
@@ -400,16 +361,6 @@ if (!currentUser) {
         activeView={activeView}
         notifications={notifications}
         onOpenNotifications={() => setIsNotificationsOpen(!isNotificationsOpen)}
-        pendingSyncCount={offlineQueue.length}
-      />
-
-      <OfflineBanner
-        isOffline={isOffline}
-        pendingSyncCount={offlineQueue.length}
-        onSyncNow={handleSyncNow}
-        isSyncing={isSyncing}
-        onGoOnline={() => setIsOffline(false)}
-        cachedCount={memories.length}
       />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">
@@ -418,7 +369,6 @@ if (!currentUser) {
           selectedStyle={selectedStyle}
           onSelectStyle={setSelectedStyle}
           totalMemoriesCount={memories.length}
-          isOffline={isOffline}
         />
 
         {activeView !== 'feed' && (
@@ -492,46 +442,8 @@ if (!currentUser) {
               theme={theme}
               currentUser={currentUser}
               onPostMemory={handlePostMemory}
-              isOffline={isOffline}
               onRequireAuth={() => setIsAuthOpen(true)}
             />
-
-            <div
-              className={`p-4 rounded-2xl border text-xs ${
-                theme === 'dark' ? 'bg-[#212429] border-[#2E343B]' : 'bg-white border-[#E8E2D8]'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-3 text-stone-400 font-mono uppercase tracking-wider text-[11px]">
-                <span className="flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-[#2C8287]" />
-                  Fellow Explorers
-                </span>
-                <span className="text-emerald-400 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  Active
-                </span>
-              </div>
-
-              <div className="space-y-2">
-                {DEMO_EXPLORERS.map((exp) => (
-                  <div key={exp.id} className="flex items-center justify-between py-1">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <img
-                        src={exp.avatar}
-                        alt={exp.name}
-                        referrerPolicy="no-referrer"
-                        className="w-6 h-6 rounded-full object-cover shrink-0"
-                      />
-                      <div className="truncate">
-                        <div className="font-semibold text-current truncate">{exp.name}</div>
-                        <div className="text-[10px] text-stone-400 font-mono">{exp.travelStyle}</div>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-mono text-stone-400 shrink-0">{exp.totalTrips} trips</span>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
       </main>
@@ -545,9 +457,10 @@ if (!currentUser) {
         onAddComment={handleAddComment}
         isBookmarked={selectedMemory ? bookmarks.includes(selectedMemory.id) : false}
         onToggleBookmark={handleToggleBookmark}
-        isOffline={isOffline}
         onRequireAuth={() => setIsAuthOpen(true)}
         onShare={handleShare}
+        onDelete={handleDeleteMemory}  
+        onEdit={handleEditMemory}
       />
 
       <ProfileModal
@@ -578,7 +491,6 @@ if (!currentUser) {
           if (m) setSelectedMemory(m);
         }}
         theme={theme}
-        onSimulateActivity={handleSimulateActivity}
       />
 
       {isMobileNewMemoryOpen && (
@@ -594,7 +506,6 @@ if (!currentUser) {
               theme={theme}
               currentUser={currentUser}
               onPostMemory={handlePostMemory}
-              isOffline={isOffline}
               onRequireAuth={() => {
                 setIsMobileNewMemoryOpen(false);
                 setIsAuthOpen(true);
